@@ -143,6 +143,10 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 
 	var extraCertificates [][]byte
 	L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
+  if len(b) < 3+L {
+    return fmt.Errorf("undersize buffer (cc)")
+  }
+
 	b = b[3:3+L]
 	for len(b) > 0 {
 		if len(b) < 3 {
