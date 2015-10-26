@@ -40,10 +40,17 @@ type Entry struct {
 	LeafCertificate  []byte
 	CertificateChain [][]byte
 
-	// This is the proper certificate or a TBSCertificate for precertificates.
-	// Depends on EntryType.
-	EntryCertificate []byte
-	IssuerKeyHash    [32]byte // Precert entries only.
+  // These fields are valid for precertificate entries only. The
+  // PrecertTBSCertificate field contains the TBSCertificate DER structure
+  // without signature or the poison extension.
+  //
+  // It is possible to construct the PrecertTBSCertificate from a finally
+  // issued certificate by taking the TBSCertificate part of the final
+  // certificate and stripping out any SCT extension. Thus a hash of this is
+  // useful to identify a certificate regardless of whether it is encountered
+  // in its precertificate or final forms.
+	PrecertTBSCertificate []byte
+	PrecertIssuerKeyHash    [32]byte
 
 	Extensions []byte
 }
@@ -200,7 +207,7 @@ func decodeEntryLeaf(ee *Entry, e *entry) error {
 			return fmt.Errorf("malformed data (1)")
 		}
 
-		copy(ee.IssuerKeyHash[:], b[0:32])
+		copy(ee.PrecertIssuerKeyHash[:], b[0:32])
 		b = b[32:]
 	}
 
@@ -226,7 +233,9 @@ func decodeEntryLeaf(ee *Entry, e *entry) error {
 	ee.Type = entryType
 	if ee.Type == X509Entry {
 		ee.LeafCertificate = certificate
-	}
+	} else if ee.Type == PrecertEntry {
+    ee.PrecertTBSCertificate = certificate
+  }
 	ee.Extensions = extensions
 	return nil
 }
