@@ -118,8 +118,9 @@ func decodeEntryCerts(ee *Entry, e *entry) error {
 	}
 
 	L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
-	if len(b) < (L + 3 + 3) {
-		return fmt.Errorf("malformed data")
+  b = b[3:]
+	if len(b) < (L + 3) {
+		return fmt.Errorf("malformed data (ed1)")
 	}
 
 	b = b[3:]
@@ -131,14 +132,14 @@ func decodeEntryCerts(ee *Entry, e *entry) error {
 	b = b[3:]
 	for i := 0; i < numExtra; i++ {
 		if len(b) < 3 {
-			return fmt.Errorf("malformed data")
+			return fmt.Errorf("malformed data (ed2)")
 		}
 
 		L = (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
 		b = b[3:]
 
 		if len(b) < L {
-			return fmt.Errorf("malformed data")
+			return fmt.Errorf("malformed data (ed3)")
 		}
 
 		extraCertificates = append(extraCertificates, b[0:L])
