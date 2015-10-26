@@ -83,9 +83,10 @@ func (s *Server) Stop() error {
   return nil
 }
 
-type entryInfo struct {
+type entryBatch struct {
   Entries []*ctclient.Entry
   NumEntries int
+  StartIndex int64
 }
 
 func (s *Server) Start() error {
@@ -106,15 +107,15 @@ func (s *Server) Start() error {
     }
 
     s.stopWait.Add(1)
-    entryChan := make(chan entryInfo, 20000)
+    entryChan := make(chan entryBatch, 10)
     go s.logQueryLoop(id, url, currentHeight, entryChan)
-    go s.logProcessLoop(id, currentHeight, entryChan)
+    go s.logProcessLoop(id, entryChan)
   }
 
   return nil
 }
 
-func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan chan<- entryInfo) {
+func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan chan<- entryBatch) {
   defer close(entryChan)
 
   numPerQuery := int64(10000)
@@ -132,9 +133,10 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
     entries, numEntries, err := client.GetEntries(start, start + numPerQuery)
     if err == nil {
       backoff.Reset()
-      entryChan <- entryInfo{
+      entryChan <- entryBatch{
         Entries: entries,
         NumEntries: numEntries,
+        StartIndex: start,
       }
 
       start += int64(numEntries)
@@ -149,16 +151,16 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
   log.Debugf("log reader stopped: %#v", logURL)
 }
 
-func (s *Server) logProcessLoop(logID int64, start int64, entryChan <-chan entryInfo) {
+func (s *Server) logProcessLoop(logID int64, entryChan <-chan entryBatch) {
   defer s.stopWait.Done()
 
   for ei := range entryChan {
-    err := s.processEntries(logID, ei.Entries, &start, ei.NumEntries)
+    err := s.processEntries(logID, ei.Entries, ei.StartIndex, ei.NumEntries)
     log.Fatale(err, "process entries")
   }
 }
 
-func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start *int64, numEntries int) error {
+func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start int64, numEntries int) error {
   tx, err := s.dbpool.Begin()
   if err != nil {
     return err
@@ -166,11 +168,11 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start *i
   defer tx.Rollback()
   
   for i, e := range entries {
-    err := s.processEntry(logID, tx, e, *start + int64(i))
+    err := s.processEntry(logID, tx, e, start + int64(i))
     log.Errore(err, "process entry")
   }
 
-  _, err = tx.Exec("UPDATE certificate_log SET current_height=$1 WHERE id=$2", *start + int64(numEntries), logID)
+  _, err = tx.Exec("UPDATE certificate_log SET current_height=$1 WHERE id=$2", start + int64(numEntries), logID)
   if err != nil {
     return err
   }
@@ -180,7 +182,7 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start *i
     return err
   }
 
-  *start = *start + int64(numEntries)
+  //*start = *start + int64(numEntries)
   return nil
 }
 
