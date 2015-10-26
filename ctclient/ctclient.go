@@ -83,7 +83,7 @@ func (c *Client) GetEntries(start, end int64) (entries []*Entry, numEntries int,
 	}
 
 	for i, e := range ger.Entries {
-    log.Debugf(" -- idx %v", i)
+    log.Debugf(" -- idx %v", int64(i)+start)
 		ee, err := decodeEntry(e)
 		if err == nil {
 			ee.Index = int64(i) + start
