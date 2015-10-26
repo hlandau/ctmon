@@ -142,9 +142,9 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 	}
 
 	var extraCertificates [][]byte
-	numExtra := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
-	b = b[3:]
-	for i := 0; i < numExtra; i++ {
+	L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
+	b = b[3:3+L]
+	for len(b) > 0 {
 		if len(b) < 3 {
 			return fmt.Errorf("malformed data (ed2)")
 		}
