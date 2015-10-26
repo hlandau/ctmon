@@ -172,7 +172,7 @@ func (s *Server) processEntry(logID int64, tx *pgx.Tx, e *ctclient.Entry, logInd
 
   var certID int64
   var ncertID int64
-  err = tx.QueryRow("INSERT INTO certificate (certhash_sha256) VALUES ($1) ON CONFLICT ON CONSTRAINT u_certificate__certhash_sha256 DO UPDATE SET t_created=certificate.t_created RETURNING id, currval('certificate_id_seq')", certHash).Scan(&certID, &ncertID)
+  err = tx.QueryRow("INSERT INTO certificate (certhash_sha256, t_valid_from, t_valid_until) VALUES ($1,$2,$3) ON CONFLICT ON CONSTRAINT u_certificate__certhash_sha256 DO UPDATE SET t_create=certificate.t_create RETURNING id, currval('certificate_id_seq')", certHash, cert.NotBefore, cert.NotAfter).Scan(&certID, &ncertID)
   if err != nil {
     return err
   }
