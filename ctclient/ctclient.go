@@ -158,7 +158,7 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 		b = b[3:]
 
 		if len(b) < L {
-			return fmt.Errorf("malformed data (ed3) %v %v %v", len(b), L, i)
+			return fmt.Errorf("malformed data (ed3) %v %v %v %v", len(b), L, i, precert)
 		}
 
 		extraCertificates = append(extraCertificates, b[0:L])
