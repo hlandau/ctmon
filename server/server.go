@@ -137,6 +137,7 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
         NumEntries: numEntries,
       }
 
+      start += int64(numEntries)
       //err := s.processEntries(logID, entries, &start, numEntries)
       //log.Fatale(err, "update log height")
     } else {
