@@ -103,7 +103,12 @@ func decodeEntry(e *entry) (*Entry, error) {
 		return nil, err
 	}
 
-	err = decodeEntryCerts(ee, e)
+	switch ee.Type {
+	case X509Entry:
+		err = decodeEntryCerts(ee, e, false)
+	case PrecertEntry:
+		err = decodeEntryCerts(ee, e, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -111,22 +116,31 @@ func decodeEntry(e *entry) (*Entry, error) {
 	return ee, nil
 }
 
-func decodeEntryCerts(ee *Entry, e *entry) error {
+func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 	b := e.ExtraData
-	if len(b) < 6 {
-		return fmt.Errorf("undersize buffer")
+
+	if precert {
+		// Read the precertificate.
+		if len(b) < 3 {
+			return fmt.Errorf("undersize buffer")
+		}
+
+		L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
+		b = b[3:]
+		if len(b) < (L + 3) {
+			return fmt.Errorf("malformed data (ed1) %v %v", len(b), L)
+		}
+
+		b = b[3:]
+		ee.LeafCertificate = b[0:L]
+
+		b = b[L:]
 	}
 
-	L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
-  b = b[3:]
-	if len(b) < (L + 3) {
-		return fmt.Errorf("malformed data (ed1) %v %v", len(b), L)
+	if len(b) < 3 {
+		return fmt.Errorf("undersize buffer (2)")
 	}
 
-	b = b[3:]
-	certificate := b[0:L]
-
-	b = b[L:]
 	var extraCertificates [][]byte
 	numExtra := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
 	b = b[3:]
@@ -135,7 +149,7 @@ func decodeEntryCerts(ee *Entry, e *entry) error {
 			return fmt.Errorf("malformed data (ed2)")
 		}
 
-		L = (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
+		L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
 		b = b[3:]
 
 		if len(b) < L {
@@ -146,7 +160,6 @@ func decodeEntryCerts(ee *Entry, e *entry) error {
 		b = b[L:]
 	}
 
-	ee.LeafCertificate = certificate
 	ee.CertificateChain = extraCertificates
 	return nil
 }
@@ -206,7 +219,9 @@ func decodeEntryLeaf(ee *Entry, e *entry) error {
 
 	ee.Time = time.Unix(int64(ts/1000), int64((ts%1000)*1000000))
 	ee.Type = entryType
-	ee.EntryCertificate = certificate
+	if ee.Type == X509Entry {
+		ee.LeafCertificate = certificate
+	}
 	ee.Extensions = extensions
 	return nil
 }
