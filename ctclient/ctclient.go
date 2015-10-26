@@ -120,7 +120,7 @@ func decodeEntryCerts(ee *Entry, e *entry) error {
 	L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
   b = b[3:]
 	if len(b) < (L + 3) {
-		return fmt.Errorf("malformed data (ed1)")
+		return fmt.Errorf("malformed data (ed1) %v %v", len(b), L)
 	}
 
 	b = b[3:]
