@@ -83,7 +83,6 @@ func (c *Client) GetEntries(start, end int64) (entries []*Entry, numEntries int,
 	}
 
 	for i, e := range ger.Entries {
-    log.Debugf(" -- idx %v", int64(i)+start)
 		ee, err := decodeEntry(e)
 		if err == nil {
 			ee.Index = int64(i) + start
@@ -128,11 +127,10 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 
 		L := (int(b[0]) << 16) | (int(b[1]) << 8) | int(b[2])
 		b = b[3:]
-		if len(b) < (L + 3) {
+		if len(b) < L {
 			return fmt.Errorf("malformed data (ed1) %v %v", len(b), L)
 		}
 
-		b = b[3:]
 		ee.LeafCertificate = b[0:L]
 
 		b = b[L:]
