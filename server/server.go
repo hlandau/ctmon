@@ -7,12 +7,15 @@ import "fmt"
 import "sync"
 import "sync/atomic"
 import "github.com/willf/bloom"
-import "github.com/jackc/pgx"
 import "github.com/hlandau/degoutils/dbutil"
 import "text/template"
 import htmltemplate "html/template"
 //import "github.com/hlandau/degoutils/sendemail"
 import "crypto/sha256"
+
+import "github.com/jackc/pgx"
+//import "database/sql"
+//import _ "github.com/lib/pq"
 
 var log, Log = xlog.New("ctmon.server")
 
@@ -80,6 +83,11 @@ func (s *Server) Stop() error {
   return nil
 }
 
+type entryInfo struct {
+  Entries []*ctclient.Entry
+  NumEntries int
+}
+
 func (s *Server) Start() error {
   // Load certificate logs
   rows, err := s.dbpool.Query("SELECT id, url, current_height FROM certificate_log")
@@ -98,14 +106,16 @@ func (s *Server) Start() error {
     }
 
     s.stopWait.Add(1)
-    go s.logLoop(id, url, currentHeight)
+    entryChan := make(chan entryInfo, 20000)
+    go s.logQueryLoop(id, url, currentHeight, entryChan)
+    go s.logProcessLoop(id, currentHeight, entryChan)
   }
 
   return nil
 }
 
-func (s *Server) logLoop(logID int64, logURL string, start int64) {
-  defer s.stopWait.Done()
+func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan chan<- entryInfo) {
+  defer close(entryChan)
 
   numPerQuery := int64(10000)
   backoff := denet.Backoff{}
@@ -122,9 +132,13 @@ func (s *Server) logLoop(logID int64, logURL string, start int64) {
     entries, numEntries, err := client.GetEntries(start, start + numPerQuery)
     if err == nil {
       backoff.Reset()
+      entryChan <- entryInfo{
+        Entries: entries,
+        NumEntries: numEntries,
+      }
 
-      err := s.processEntries(logID, entries, &start, numEntries)
-      log.Fatale(err, "update log height")
+      //err := s.processEntries(logID, entries, &start, numEntries)
+      //log.Fatale(err, "update log height")
     } else {
       log.Errore(err, "cannot get entries for log: ", logURL)
       backoff.Sleep()
@@ -132,6 +146,15 @@ func (s *Server) logLoop(logID int64, logURL string, start int64) {
   }
 
   log.Debugf("log reader stopped: %#v", logURL)
+}
+
+func (s *Server) logProcessLoop(logID int64, start int64, entryChan <-chan entryInfo) {
+  defer s.stopWait.Done()
+
+  for ei := range entryChan {
+    err := s.processEntries(logID, ei.Entries, &start, ei.NumEntries)
+    log.Fatale(err, "process entries")
+  }
 }
 
 func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start *int64, numEntries int) error {
