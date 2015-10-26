@@ -148,6 +148,7 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
   }
 
 	b = b[3:3+L]
+  i := 0
 	for len(b) > 0 {
 		if len(b) < 3 {
 			return fmt.Errorf("malformed data (ed2)")
@@ -157,11 +158,12 @@ func decodeEntryCerts(ee *Entry, e *entry, precert bool) error {
 		b = b[3:]
 
 		if len(b) < L {
-			return fmt.Errorf("malformed data (ed3) %v %v", len(b), L)
+			return fmt.Errorf("malformed data (ed3) %v %v %v", len(b), L, i)
 		}
 
 		extraCertificates = append(extraCertificates, b[0:L])
 		b = b[L:]
+    i++
 	}
 
 	ee.CertificateChain = extraCertificates
