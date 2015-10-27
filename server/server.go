@@ -11,6 +11,7 @@ import "github.com/willf/bloom"
 import "github.com/hlandau/degoutils/dbutil"
 import "text/template"
 import htmltemplate "html/template"
+import "time"
 
 //import "github.com/hlandau/degoutils/sendemail"
 import "crypto/sha256"
@@ -30,6 +31,8 @@ type Server struct {
 	cfg                Config
 	stopping           int32
 	stopWait           sync.WaitGroup
+  stopChan chan struct{}
+  stopOnce sync.Once
 	bloomFilter        *bloom.BloomFilter
 	dbpool             *pgx.ConnPool
 	textNotifyEmailTpl *template.Template
@@ -39,6 +42,7 @@ type Server struct {
 func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg,
+    stopChan: make(chan struct{}),
 	}
 
 	//s.textNotifyEmailTpl = template.Must(template.New("text-notify-email").Parse(textNotifyEmailSrc))
@@ -81,8 +85,11 @@ func (s *Server) loadHostnameBloomFilter() error {
 }
 
 func (s *Server) Stop() error {
-	atomic.StoreInt32(&s.stopping, 1)
-	s.stopWait.Wait()
+  s.stopOnce.Do(func() {
+    atomic.StoreInt32(&s.stopping, 1)
+    close(s.stopChan)
+    s.stopWait.Wait()
+  })
 	return nil
 }
 
@@ -136,6 +143,15 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
 		entries, numEntries, err := client.GetEntries(start, start+numPerQuery)
 		if err == nil {
 			backoff.Reset()
+
+      if len(entries) < 1 {
+        select {
+        case <-time.After(2*time.Minute):
+        case <-s.stopChan:
+        }
+        continue
+      }
+
 			entryChan <- entryBatch{
 				Entries:    entries,
 				NumEntries: numEntries,
