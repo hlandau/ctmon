@@ -174,7 +174,7 @@ func (s *Server) logProcessLoop(logID int64, entryChan <-chan entryBatch) {
 	defer s.stopWait.Done()
 
 	for ei := range entryChan {
-    log.Debug("processing entries: log %d: %d..%d", logID, ei.StartIndex, ei.StartIndex+int64(ei.NumEntries))
+    log.Debugf("processing entries: log %d: %d..%d", logID, ei.StartIndex, ei.StartIndex+int64(ei.NumEntries))
 
 		err := s.processEntries(logID, ei.Entries, ei.StartIndex, ei.NumEntries)
 		log.Fatale(err, "process entries")
