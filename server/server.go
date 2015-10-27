@@ -144,7 +144,7 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
 		if err == nil {
 			backoff.Reset()
 
-      if len(entries) < 1 {
+      if numEntries < 1 {
         select {
         case <-time.After(2*time.Minute):
         case <-s.stopChan:
