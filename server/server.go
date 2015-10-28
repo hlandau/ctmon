@@ -241,7 +241,7 @@ func (s *Server) processEntry(logID int64, tx *pgx.Tx, e *ctclient.Entry, logInd
 		return err
 	}
 
-  log.Debug("log %d: entry %d", logID, logIndex)
+  log.Debugf("log %d: entry %d", logID, logIndex)
 	return nil
 }
 
