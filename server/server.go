@@ -176,6 +176,7 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
       end = sth.TreeSize
     }
     if start >= end {
+      log.Debugff("log %d: at the end", logID)
       sth = nil
       continue
     }
