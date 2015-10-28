@@ -249,6 +249,7 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start in
 
   defer chstmt.Close()
 
+  log.Debugf("inserting %d hostnames", len(hnQueue))
   for i := range hnQueue {
     _, err = chstmt.Exec(hnQueue[i].CertificateID, hnQueue[i].Hostname)
     if err != nil {
@@ -265,6 +266,7 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start in
 
   defer obstmt.Close()
 
+  log.Debugf("inserting %d observations", len(observed))
   for i := range observed {
     _, err = obstmt.Exec(observed[i].CertificateID, logID, observed[i].LogIndex)
     if err != nil {
