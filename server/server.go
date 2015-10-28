@@ -160,6 +160,8 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
       select {
       case <-ticker.C:
       case <-oneTick:
+      case <-s.stopChan:
+        continue
       }
 
       log.Debug("getting STH...")
