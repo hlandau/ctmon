@@ -8,7 +8,7 @@ import "fmt"
 import "sync"
 import "sync/atomic"
 import "github.com/willf/bloom"
-import "github.com/hlandau/degoutils/dbutil"
+//import "github.com/hlandau/degoutils/dbutil"
 import "text/template"
 import htmltemplate "html/template"
 import "time"
@@ -16,10 +16,10 @@ import "time"
 //import "github.com/hlandau/degoutils/sendemail"
 import "crypto/sha256"
 
-import "github.com/jackc/pgx"
+//import "github.com/jackc/pgx"
 
-//import "database/sql"
-//import _ "github.com/lib/pq"
+import "database/sql"
+import "github.com/lib/pq"
 
 var log, Log = xlog.New("ctmon.server")
 
@@ -34,9 +34,11 @@ type Server struct {
   stopChan chan struct{}
   stopOnce sync.Once
 	bloomFilter        *bloom.BloomFilter
-	dbpool             *pgx.ConnPool
+	//dbpool             *pgx.ConnPool
+	dbpool             *sql.DB
 	textNotifyEmailTpl *template.Template
 	htmlNotifyEmailTpl *htmltemplate.Template
+  prepareds          prepareds
 }
 
 func New(cfg Config) (*Server, error) {
@@ -49,10 +51,16 @@ func New(cfg Config) (*Server, error) {
 	//s.htmlNotifyEmailTpl = htmltemplate.Must(htmltemplate.New("html-notify-email").Parse(htmlNotifyEmailSrc))
 
 	var err error
-	s.dbpool, err = dbutil.NewPgxPool(s.cfg.DBURI)
+  s.dbpool, err = sql.Open("postgresql", s.cfg.DBURI)
+	//s.dbpool, err = dbutil.NewPgxPool(s.cfg.DBURI)
 	if err != nil {
 		return nil, err
 	}
+
+  err = s.prepareds.Prepare(s.dbpool)
+  if err != nil {
+    return nil, err
+  }
 
 	err = s.loadHostnameBloomFilter()
 	if err != nil {
@@ -117,7 +125,7 @@ func (s *Server) Start() error {
 		}
 
 		s.stopWait.Add(1)
-		entryChan := make(chan entryBatch, 10)
+		entryChan := make(chan entryBatch, 3)
 		go s.logQueryLoop(id, url, currentHeight, entryChan)
 		go s.logProcessLoop(id, entryChan)
 	}
@@ -202,6 +210,16 @@ func (s *Server) logProcessLoop(logID int64, entryChan <-chan entryBatch) {
 	}
 }
 
+type hostnameQueueItem struct {
+  CertificateID int64
+  Hostname string
+}
+
+type observationQueueItem struct {
+  CertificateID int64
+  LogIndex int64
+}
+
 func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start int64, numEntries int) error {
 	tx, err := s.dbpool.Begin()
 	if err != nil {
@@ -209,10 +227,52 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start in
 	}
 	defer tx.Rollback()
 
+  txpr, err := s.prepareds.Tx(tx)
+  if err != nil {
+    return err
+  }
+
+  defer txpr.Close()
+
+  var hnQueue []hostnameQueueItem
+  observed := make([]observationQueueItem, 0, len(entries))
+
 	for i, e := range entries {
-		err := s.processEntry(logID, tx, e, start+int64(i))
+		err := s.processEntry(logID, tx, txpr, &hnQueue, &observed, e, start+int64(i))
 		log.Errore(err, "process entry")
 	}
+
+  chstmt, err := tx.Prepare(pq.CopyIn("certificate_hostname", "certificate_id", "hostname"))
+  if err != nil {
+    return err
+  }
+
+  defer chstmt.Close()
+
+  for i := range hnQueue {
+    _, err = chstmt.Exec(hnQueue[i].CertificateID, hnQueue[i].Hostname)
+    if err != nil {
+      return err
+    }
+  }
+
+  chstmt.Close()
+
+  obstmt, err := tx.Prepare(pq.CopyIn("certificate_observation", "certificate_id", "log_id", "log_index"))
+  if err != nil {
+    return err
+  }
+
+  defer obstmt.Close()
+
+  for i := range observed {
+    _, err = obstmt.Exec(observed[i].CertificateID, logID, observed[i].LogIndex)
+    if err != nil {
+      return err
+    }
+  }
+
+  obstmt.Close()
 
 	_, err = tx.Exec("UPDATE certificate_log SET current_height=$1 WHERE id=$2", start+int64(numEntries), logID)
 	if err != nil {
@@ -228,7 +288,7 @@ func (s *Server) processEntries(logID int64, entries []*ctclient.Entry, start in
 	return nil
 }
 
-func (s *Server) processEntry(logID int64, tx *pgx.Tx, e *ctclient.Entry, logIndex int64) error {
+func (s *Server) processEntry(logID int64, tx *sql.Tx, txpr *prepareds, hnQueue *[]hostnameQueueItem, observed *[]observationQueueItem, e *ctclient.Entry, logIndex int64) error {
 	cert, err := x509.ParseCertificate(e.LeafCertificate)
 	if err != nil {
 		return fmt.Errorf("Failed to parse X.509 certificate: %v", err)
@@ -240,7 +300,7 @@ func (s *Server) processEntry(logID int64, tx *pgx.Tx, e *ctclient.Entry, logInd
 
 	var certID int64
 	var ncertID int64
-	err = tx.QueryRow("INSERT INTO certificate (certhash_sha256, t_valid_from, t_valid_until) VALUES ($1,$2,$3) ON CONFLICT ON CONSTRAINT u_certificate__certhash_sha256 DO UPDATE SET t_create=certificate.t_create RETURNING id, currval('certificate_id_seq')", certHash, cert.NotBefore, cert.NotAfter).Scan(&certID, &ncertID)
+	err = txpr.InsertCertificate.QueryRow(certHash, cert.NotBefore, cert.NotAfter).Scan(&certID, &ncertID)
 	if err != nil {
 		return err
 	}
@@ -250,17 +310,14 @@ func (s *Server) processEntry(logID int64, tx *pgx.Tx, e *ctclient.Entry, logInd
 	if wasInserted {
 		hostnames := getCertificateHostnames(cert)
 		for hostname := range hostnames {
-			_, err := tx.Exec("INSERT INTO certificate_hostname (certificate_id, hostname) VALUES ($1,$2)", certID, hostname)
-			if err != nil {
-				return err
-			}
+      *hnQueue = append(*hnQueue, hostnameQueueItem{ certID, hostname, })
 		}
 	}
 
-	_, err = tx.Exec("INSERT INTO certificate_observation (certificate_id, log_id, log_index) VALUES ($1, $2, $3)", certID, logID, logIndex)
-	if err != nil {
-		return err
-	}
+  *observed = append(*observed, observationQueueItem{
+    CertificateID: certID,
+    LogIndex: logIndex,
+  })
 
   log.Debugf("log %d: entry %d", logID, logIndex)
 	return nil
