@@ -139,7 +139,7 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
 			break
 		}
 
-		//log.Debugf("get entries: %#v: %d..%d", logURL, start, start+numPerQuery)
+		log.Debugf("get entries: %#v: %d..%d", logURL, start, start+numPerQuery)
 		entries, numEntries, err := client.GetEntries(start, start+numPerQuery)
 		if err == nil {
 			backoff.Reset()
