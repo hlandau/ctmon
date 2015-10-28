@@ -162,8 +162,10 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
       case <-oneTick:
       }
 
+      log.Debug("getting STH...")
       sth, err = client.GetSTH()
       if err != nil {
+        log.Errore(err, "failed to get STH")
         backoff.Sleep()
         continue
       }
