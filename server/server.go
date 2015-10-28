@@ -57,11 +57,13 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
+  log.Debug("preparing...")
   err = s.prepareds.Prepare(s.dbpool)
   if err != nil {
     return nil, err
   }
 
+  log.Debug("loading hostname bloom filter...")
 	err = s.loadHostnameBloomFilter()
 	if err != nil {
 		return nil, err
