@@ -51,7 +51,7 @@ func New(cfg Config) (*Server, error) {
 	//s.htmlNotifyEmailTpl = htmltemplate.Must(htmltemplate.New("html-notify-email").Parse(htmlNotifyEmailSrc))
 
 	var err error
-  s.dbpool, err = sql.Open("postgresql", s.cfg.DBURI)
+  s.dbpool, err = sql.Open("postgres", s.cfg.DBURI)
 	//s.dbpool, err = dbutil.NewPgxPool(s.cfg.DBURI)
 	if err != nil {
 		return nil, err
