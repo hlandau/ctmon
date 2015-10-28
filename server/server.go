@@ -134,23 +134,44 @@ func (s *Server) logQueryLoop(logID int64, logURL string, start int64, entryChan
 		LogURL: logURL,
 	}
 
+  var sth *ctclient.STH
+  ticker := time.NewTicker(2*time.Minute)
+  defer ticker.Stop()
+  oneTick := make(chan struct{}, 1)
+  oneTick <- struct{}{}
+  var err error
+
 	for {
 		if atomic.LoadInt32(&s.stopping) != 0 {
 			break
 		}
 
-		log.Debugf("get entries: %#v: %d..%d", logURL, start, start+numPerQuery)
-		entries, numEntries, err := client.GetEntries(start, start+numPerQuery)
-		if err == nil {
-			backoff.Reset()
+    if sth == nil {
+      select {
+      case <-ticker.C:
+      case <-oneTick:
+      }
 
-      if numEntries < 1 {
-        select {
-        case <-time.After(2*time.Minute):
-        case <-s.stopChan:
-        }
+      sth, err = client.GetSTH()
+      if err != nil {
+        backoff.Sleep()
         continue
       }
+    }
+
+    end := start + numPerQuery
+    if end > sth.TreeSize {
+      end = sth.TreeSize
+    }
+    if start >= end {
+      sth = nil
+      continue
+    }
+
+		log.Debugf("get entries: %#v: (%d,%d)", logURL, start, end-1)
+		entries, numEntries, err := client.GetEntries(start, end-1)
+		if err == nil {
+			backoff.Reset()
 
 			entryChan <- entryBatch{
 				Entries:    entries,
@@ -174,7 +195,7 @@ func (s *Server) logProcessLoop(logID int64, entryChan <-chan entryBatch) {
 	defer s.stopWait.Done()
 
 	for ei := range entryChan {
-    log.Debugf("processing entries: log %d: %d..%d", logID, ei.StartIndex, ei.StartIndex+int64(ei.NumEntries))
+    log.Debugf("processing entries: log %d: (%d,%d)", logID, ei.StartIndex, ei.StartIndex+int64(ei.NumEntries)-1)
 
 		err := s.processEntries(logID, ei.Entries, ei.StartIndex, ei.NumEntries)
 		log.Fatale(err, "process entries")

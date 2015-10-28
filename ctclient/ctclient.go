@@ -71,6 +71,50 @@ func (c *Client) init() {
 	})
 }
 
+type STH struct {
+  TreeSize int64
+  Time time.Time
+  RootHash [32]byte
+  HeadSignature []byte
+}
+
+type sth struct {
+  TreeSize int64 `json:"tree_size"`
+  Timestamp int64 `json:"timestamp"`
+  SHA256RootHash denet.Base64 `json:"sha256_root_hash"`
+  TreeHeadSignature denet.Base64 `json:"tree_head_signature"`
+}
+
+func (c *Client) GetSTH() (*STH, error) {
+  c.init()
+
+  res, err := denet.Require200(c.Client.Get(c.LogURL + "/ct/v1/get-sth"))
+  if err != nil {
+    return nil, err
+  }
+
+  defer res.Body.Close()
+
+  var sthResponse sth
+  err = json.NewDecoder(res.Body).Decode(&sthResponse)
+  if err != nil {
+    return nil, err
+  }
+
+  if len(sthResponse.SHA256RootHash) != 32 {
+    return nil, fmt.Errorf("unexpected hash length")
+  }
+
+  s := &STH{
+    TreeSize: sthResponse.TreeSize,
+    Time: time.Unix(sthResponse.Timestamp/1000, (sthResponse.Timestamp%1000)*1000000),
+    HeadSignature: sthResponse.TreeHeadSignature,
+  }
+  copy(s.RootHash[:], sthResponse.SHA256RootHash)
+
+  return s, nil
+}
+
 // numEntries includes any entries which could not be parsed, which are not included in entries.
 func (c *Client) GetEntries(start, end int64) (entries []*Entry, numEntries int, err error) {
 	c.init()
@@ -249,4 +293,6 @@ type getEntriesResponse struct {
 type entry struct {
 	LeafInput denet.Base64 `json:"leaf_input"`
 	ExtraData denet.Base64 `json:"extra_data"`
+  ErrorMessage string `json:"error_message"`
+  Success *bool `json:"success"`
 }
